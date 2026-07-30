@@ -1,56 +1,43 @@
 import jwt from "jsonwebtoken";
-import asyncHandler from "./asyncHandler.js";
-import ApiError from "../utils/ApiError.js";
+import { env } from "../config/env.js";
+import { ApiError } from "../utils/ApiError.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 import User from "../models/User.js";
 
 export const protect = asyncHandler(async (req, res, next) => {
-  let token;
-
-  if (
-    req.headers.authorization &&
-    req.headers.authorization.startsWith("Bearer ")
-  ) {
-    token = req.headers.authorization.split(" ")[1];
-  }
+  const authHeader = req.headers.authorization;
+  const token =
+    authHeader && authHeader.startsWith("Bearer")
+      ? authHeader.split(" ")[1]
+      : req.cookies?.accessToken;
 
   if (!token) {
-    return next(new ApiError(401, "Not authorized. No token provided."));
+    throw new ApiError(401, "Not authorized, no token provided");
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, env.jwt.accessSecret);
+    const user = await User.findById(decoded.id);
 
-    const user = await User.findById(decoded.id).select("-password");
-
-    if (!user) {
-      return next(new ApiError(401, "User not found."));
+    if (!user || !user.isActive) {
+      throw new ApiError(401, "Not authorized, user not found or inactive");
     }
 
     req.user = user;
-
     next();
-  } catch (error) {
-    return next(new ApiError(401, "Invalid or expired token."));
+  } catch (err) {
+    throw new ApiError(401, "Not authorized, invalid or expired token");
   }
 });
 
-export const restrictTo = (...roles) => {
-  return (req, res, next) => {
-    if (!req.user) {
-      return next(new ApiError(401, "Authentication required."));
-    }
-
+export const restrictTo =
+  (...roles) =>
+  (req, res, next) => {
     if (!roles.includes(req.user.role)) {
-      return next(
-        new ApiError(403, "You do not have permission to perform this action."),
+      throw new ApiError(
+        403,
+        "You do not have permission to perform this action",
       );
     }
-
     next();
   };
-};
-
-export default {
-  protect,
-  restrictTo,
-};

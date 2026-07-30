@@ -1,11 +1,58 @@
 import { useSelector } from "react-redux";
-import { PERMISSIONS } from "../constants";
+import { useCallback } from "react";
 
-export function usePermission(requiredPermission) {
+export function usePermission() {
   const user = useSelector((state) => state.auth?.user);
 
-  // If no user or permissions defined yet, allow by default in development
-  if (!user || !user.permissions) return true;
+  const hasPermission = useCallback(
+    (permission) => {
+      // Development mode: allow when no user is loaded yet
+      if (!user) return true;
 
-  return user.permissions.includes(requiredPermission);
+      // Super Admin has all permissions
+      if (user.role === "super_admin") return true;
+
+      if (!Array.isArray(user.permissions)) return false;
+
+      return user.permissions.includes(permission);
+    },
+    [user],
+  );
+
+  const hasAnyPermission = useCallback(
+    (permissions = []) => {
+      if (!user) return true;
+
+      if (user.role === "super_admin") return true;
+
+      if (!Array.isArray(user.permissions)) return false;
+
+      return permissions.some((permission) =>
+        user.permissions.includes(permission),
+      );
+    },
+    [user],
+  );
+
+  const hasAllPermissions = useCallback(
+    (permissions = []) => {
+      if (!user) return true;
+
+      if (user.role === "super_admin") return true;
+
+      if (!Array.isArray(user.permissions)) return false;
+
+      return permissions.every((permission) =>
+        user.permissions.includes(permission),
+      );
+    },
+    [user],
+  );
+
+  return {
+    user,
+    hasPermission,
+    hasAnyPermission,
+    hasAllPermissions,
+  };
 }

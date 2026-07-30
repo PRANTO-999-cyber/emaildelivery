@@ -1,78 +1,55 @@
-import crypto from "crypto";
-import dns from "dns/promises";
-
 import Domain from "../models/Domain.js";
+import { runFullDeliverabilityCheck } from "./dnsCheck.service.js";
+import { ApiError } from "../utils/ApiError.js";
 
-/**
- * Generate verification token
- */
-export const generateVerificationToken = () => {
-  return crypto.randomBytes(32).toString("hex");
-};
-
-/**
- * Verify DNS TXT record
- */
-export const verifyDomainDNS = async (domain, token) => {
-  try {
-    const records = await dns.resolveTxt(domain);
-
-    const txtRecords = records.flat().join(" ");
-
-    return txtRecords.includes(token);
-  } catch (error) {
-    return false;
+export const addDomain = async ({ domain, userId }) => {
+  const existing = await Domain.findOne({ name: domain });
+  if (existing) {
+    throw new ApiError(409, "This domain has already been added");
   }
+
+  const created = await Domain.create({
+    user: userId,
+    name: domain,
+  });
+
+  return created;
 };
 
-/**
- * Verify domain ownership
- */
+export const listDomains = async () =>
+  Domain.find({ isDeleted: { $ne: true } }).sort({ createdAt: -1 });
+
 export const verifyDomain = async (domainId) => {
-  const domain = await Domain.findById(domainId);
-
-  if (!domain) {
-    throw new Error("Domain not found");
+  const domainDoc = await Domain.findById(domainId);
+  if (!domainDoc) {
+    throw new ApiError(404, "Domain not found");
   }
 
-  const verified = await verifyDomainDNS(
-    domain.domain,
-    domain.verificationToken,
+  const report = await runFullDeliverabilityCheck(domainDoc.name, "s1");
+
+  domainDoc.spfVerified = report.spf.valid;
+  domainDoc.dkimVerified = report.dkim.valid;
+  domainDoc.dmarcVerified = report.dmarc.valid;
+  domainDoc.mxVerified = report.mx.length > 0;
+
+  const fullyVerified = domainDoc.isVerified();
+  domainDoc.verificationStatus = fullyVerified ? "verified" : "pending";
+  if (fullyVerified && !domainDoc.verifiedAt) {
+    domainDoc.verifiedAt = new Date();
+  }
+
+  await domainDoc.save();
+
+  return { domain: domainDoc, report };
+};
+
+export const setDefaultDomain = async (domainId) => {
+  await Domain.updateMany({}, { $set: { sendingEnabled: false } });
+  const domainDoc = await Domain.findByIdAndUpdate(
+    domainId,
+    { sendingEnabled: true, status: "active" },
+    { new: true },
   );
-
-  if (verified) {
-    domain.verified = true;
-    domain.verifiedAt = new Date();
-    await domain.save();
-  }
-
-  return domain;
-};
-
-/**
- * Create verification token for a domain
- */
-export const createVerificationRecord = async (domainId) => {
-  const domain = await Domain.findById(domainId);
-
-  if (!domain) {
-    throw new Error("Domain not found");
-  }
-
-  domain.verificationToken = generateVerificationToken();
-
-  await domain.save();
-
-  return {
-    type: "TXT",
-    host: `_verify.${domain.domain}`,
-    value: domain.verificationToken,
-  };
-};
-
-export default {
-  generateVerificationToken,
-  verifyDomainDNS,
-  verifyDomain,
-  createVerificationRecord,
+  if (!domainDoc) throw new ApiError(404, "Domain not found");
+  return domainDoc;
 };

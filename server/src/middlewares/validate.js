@@ -1,19 +1,11 @@
 import { ZodError } from "zod";
-import ApiError from "../utils/ApiError.js";
+import { ApiError } from "../utils/ApiError.js";
 
 export const validate = (schema) => {
   return async (req, res, next) => {
     try {
-      const validated = await schema.parseAsync({
-        body: req.body,
-        params: req.params,
-        query: req.query,
-      });
-
-      if (validated.body) req.body = validated.body;
-      if (validated.params) req.params = validated.params;
-      if (validated.query) req.query = validated.query;
-
+      const validated = await schema.parseAsync(req.body);
+      req.body = validated;
       next();
     } catch (error) {
       if (error instanceof ZodError) {
@@ -28,7 +20,6 @@ export const validate = (schema) => {
           ),
         );
       }
-
       next(error);
     }
   };

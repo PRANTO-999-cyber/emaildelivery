@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
 const userSchema = new mongoose.Schema(
   {
@@ -10,7 +11,7 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: [true, "Email is required"],
-      unique: true, // Automatically creates a unique index on 'email'
+      unique: true,
       lowercase: true,
       trim: true,
     },
@@ -21,19 +22,39 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["user", "admin"],
-      default: "user",
+      enum: ["owner", "admin", "editor", "viewer"],
+      default: "admin",
     },
     status: {
       type: String,
       enum: ["active", "inactive", "suspended"],
       default: "active",
-      index: true, // Automatically creates an index on 'status'
+      index: true,
     },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    lastLoginAt: { type: Date },
+    refreshToken: { type: String, select: false },
   },
   { timestamps: true },
 );
 
-// DO NOT ADD: userSchema.index({ email: 1 }); or userSchema.index({ status: 1 });
+userSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
+  this.password = await bcrypt.hash(this.password, 10);
+});
+
+userSchema.methods.comparePassword = function (candidate) {
+  return bcrypt.compare(candidate, this.password);
+};
+
+userSchema.methods.toSafeObject = function () {
+  const obj = this.toObject();
+  delete obj.password;
+  delete obj.refreshToken;
+  return obj;
+};
 
 export default mongoose.models.User || mongoose.model("User", userSchema);

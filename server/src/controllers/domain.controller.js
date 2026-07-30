@@ -3,7 +3,10 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import * as domainService from "../services/domain.service.js";
 
 export const createDomain = asyncHandler(async (req, res) => {
-  const domain = await domainService.addDomain(req.body);
+  const domain = await domainService.addDomain({
+    domain: req.body.domain,
+    userId: req.user._id,
+  });
   res
     .status(201)
     .json(
