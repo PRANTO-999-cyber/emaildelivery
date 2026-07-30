@@ -72,26 +72,66 @@ export default function CampaignList() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
-      {/* Header Section */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
-            Email Campaigns
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Manage dispatch schedules, monitor active deliveries, and inspect
-            performance telemetry.
-          </p>
+    <div className="relative min-h-screen bg-slate-950 p-6 text-slate-100">
+      {/* Background Ambient Glows */}
+      <div className="pointer-events-none fixed top-10 left-10 h-96 w-96 rounded-full bg-indigo-600/10 blur-3xl" />
+      <div className="pointer-events-none fixed bottom-10 right-10 h-96 w-96 rounded-full bg-cyan-600/10 blur-3xl" />
+
+      <div className="relative z-10 mx-auto max-w-7xl space-y-6">
+        {/* Header Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800/80 pb-5">
+          <div>
+            <div className="flex items-center space-x-2">
+              <span className="h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span className="text-[11px] font-bold uppercase tracking-wider text-cyan-400">
+                Outreach Telemetry
+              </span>
+            </div>
+            <h1 className="mt-1 text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-slate-100 via-indigo-200 to-cyan-300">
+              Email Campaigns
+            </h1>
+            <p className="text-sm text-slate-400 mt-1">
+              Manage dispatch schedules, monitor active deliveries, and inspect
+              performance metrics.
+            </p>
+          </div>
+
+          {hasPermission(PERMISSIONS.CAMPAIGN_CREATE) && (
+            <button
+              onClick={() => navigate("/campaigns/new")}
+              className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl font-semibold text-sm text-white bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 shadow-lg shadow-indigo-500/25 transition-all duration-200 hover:scale-[1.02] active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 focus:ring-offset-slate-950"
+            >
+              <svg
+                className="w-4 h-4 mr-2 text-cyan-200"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2.5}
+                  d="M12 4v16m8-8H4"
+                />
+              </svg>
+              Create Campaign
+            </button>
+          )}
         </div>
 
-        {hasPermission(PERMISSIONS.CAMPAIGN_CREATE) && (
-          <button
-            onClick={() => navigate("/campaigns/new")}
-            className="inline-flex items-center justify-center px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm rounded-lg shadow-xs transition-colors focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
-          >
+        {/* Filter Bar */}
+        <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-2xl shadow-xl backdrop-blur-md flex flex-col md:flex-row gap-4 justify-between items-center">
+          {/* Search Input */}
+          <div className="relative w-full md:w-80">
+            <input
+              type="text"
+              placeholder="Search campaigns..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 text-sm bg-slate-950/80 border border-slate-800 rounded-xl text-slate-100 placeholder-slate-500 focus:bg-slate-950 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none transition-all duration-200"
+            />
             <svg
-              className="w-4 h-4 mr-2"
+              className="w-4 h-4 absolute left-3.5 top-3 text-slate-500"
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -100,151 +140,127 @@ export default function CampaignList() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M12 4v16m8-8H4"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
               />
             </svg>
-            Create Campaign
-          </button>
+          </div>
+
+          {/* Status Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-2 md:pb-0 scrollbar-none">
+            {[
+              "ALL",
+              CAMPAIGN_STATUS.DRAFT,
+              CAMPAIGN_STATUS.DISPATCHING,
+              CAMPAIGN_STATUS.COMPLETED,
+              CAMPAIGN_STATUS.PAUSED_CIRCUIT_BREAKER,
+            ].map((status) => {
+              const isActive = statusFilter === status;
+              return (
+                <button
+                  key={status}
+                  onClick={() => setStatusFilter(status)}
+                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl whitespace-nowrap transition-all duration-200 ${
+                    isActive
+                      ? "bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 shadow-sm shadow-indigo-500/20"
+                      : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200 border border-transparent"
+                  }`}
+                >
+                  {status === "ALL"
+                    ? "All Statuses"
+                    : CAMPAIGN_STATUS_BADGES[status]?.label || status}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Campaign List / Grid View */}
+        {isLoading ? (
+          <div className="bg-slate-900/80 rounded-2xl border border-slate-800 p-12 text-center backdrop-blur-md">
+            <div className="w-9 h-9 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm font-medium text-slate-400">
+              Fetching campaigns telemetry...
+            </p>
+          </div>
+        ) : error ? (
+          <div className="bg-rose-950/40 rounded-2xl border border-rose-500/30 p-6 text-center text-rose-300 backdrop-blur-md">
+            <p className="text-sm font-bold">Failed to load campaigns.</p>
+            <button
+              onClick={() => refetch()}
+              className="mt-2 text-xs font-semibold text-rose-400 hover:text-rose-200 hover:underline transition-colors"
+            >
+              Try again
+            </button>
+          </div>
+        ) : campaigns.length === 0 ? (
+          <div className="bg-slate-900/80 rounded-2xl border border-slate-800 p-12 text-center backdrop-blur-md">
+            <div className="w-14 h-14 mx-auto mb-3 rounded-2xl bg-slate-800/80 text-slate-400 flex items-center justify-center border border-slate-700/50">
+              <svg
+                className="w-7 h-7 text-indigo-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                />
+              </svg>
+            </div>
+            <h3 className="text-base font-bold text-slate-200">
+              No campaigns found
+            </h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+              Get started by launching a new outreach campaign or adjusting your
+              search filters.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {campaigns.map((campaign) => (
+              <CampaignCard
+                key={campaign.id}
+                campaign={campaign}
+                onDispatch={handleDispatch}
+                onPause={handlePause}
+                onDelete={handleDelete}
+                isDispatching={isDispatching}
+                isPausing={isPausing}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Pagination Footer */}
+        {meta.totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-slate-800/80 pt-4 px-2">
+            <p className="text-xs text-slate-400 font-mono">
+              Page <span className="font-bold text-slate-200">{page}</span> of{" "}
+              <span className="font-bold text-slate-200">
+                {meta.totalPages}
+              </span>
+            </p>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                disabled={page === 1 || isFetching}
+                className="px-3.5 py-1.5 text-xs font-semibold bg-slate-900 border border-slate-800 rounded-xl text-slate-300 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(p + 1, meta.totalPages))}
+                disabled={page === meta.totalPages || isFetching}
+                className="px-3.5 py-1.5 text-xs font-semibold bg-slate-900 border border-slate-800 rounded-xl text-slate-300 hover:bg-slate-800 hover:text-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                Next
+              </button>
+            </div>
+          </div>
         )}
       </div>
-
-      {/* Filter Bar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs flex flex-col md:flex-row gap-4 justify-between items-center">
-        {/* Search Input */}
-        <div className="relative w-full md:w-80">
-          <input
-            type="text"
-            placeholder="Search campaigns..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 text-sm bg-gray-50 border border-gray-300 rounded-lg focus:bg-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-          />
-          <svg
-            className="w-4 h-4 absolute left-3 top-2.5 text-gray-400"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
-        </div>
-
-        {/* Status Filter Pills */}
-        <div className="flex items-center gap-1 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
-          {[
-            "ALL",
-            CAMPAIGN_STATUS.DRAFT,
-            CAMPAIGN_STATUS.DISPATCHING,
-            CAMPAIGN_STATUS.COMPLETED,
-            CAMPAIGN_STATUS.PAUSED_CIRCUIT_BREAKER,
-          ].map((status) => {
-            const isActive = statusFilter === status;
-            return (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
-                  isActive
-                    ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 border border-transparent"
-                }`}
-              >
-                {status === "ALL"
-                  ? "All Statuses"
-                  : CAMPAIGN_STATUS_BADGES[status]?.label || status}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Campaign List / Grid View */}
-      {isLoading ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-500">Loading campaigns...</p>
-        </div>
-      ) : error ? (
-        <div className="bg-red-50 rounded-xl border border-red-200 p-6 text-center text-red-700">
-          <p className="text-sm font-semibold">Failed to load campaigns.</p>
-          <button
-            onClick={() => refetch()}
-            className="mt-2 text-xs font-medium text-red-600 hover:underline"
-          >
-            Try again
-          </button>
-        </div>
-      ) : campaigns.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center">
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-              />
-            </svg>
-          </div>
-          <h3 className="text-base font-semibold text-gray-900">
-            No campaigns found
-          </h3>
-          <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
-            Get started by launching a new outreach campaign or adjusting your
-            search filters.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {campaigns.map((campaign) => (
-            <CampaignCard
-              key={campaign.id}
-              campaign={campaign}
-              onDispatch={handleDispatch}
-              onPause={handlePause}
-              onDelete={handleDelete}
-              isDispatching={isDispatching}
-              isPausing={isPausing}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Pagination Footer */}
-      {meta.totalPages > 1 && (
-        <div className="flex items-center justify-between border-t border-gray-200 pt-4">
-          <p className="text-xs text-gray-500">
-            Page <span className="font-semibold">{page}</span> of{" "}
-            <span className="font-semibold">{meta.totalPages}</span>
-          </p>
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => setPage((p) => Math.max(p - 1, 1))}
-              disabled={page === 1 || isFetching}
-              className="px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Previous
-            </button>
-            <button
-              onClick={() => setPage((p) => Math.min(p + 1, meta.totalPages))}
-              disabled={page === meta.totalPages || isFetching}
-              className="px-3 py-1.5 text-xs font-medium bg-white border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
