@@ -1,178 +1,313 @@
 import React, { useState } from "react";
+import {
+  UploadCloud,
+  FileSpreadsheet,
+  CheckCircle2,
+  AlertCircle,
+  X,
+} from "lucide-react";
 
-/**
- * Handles CSV file uploading, parsing header preview, and dynamic column mapping.
- */
 export default function CSVImporter({ onImportSubmit, onCancel }) {
   const [file, setFile] = useState(null);
   const [headers, setHeaders] = useState([]);
+  const [dragging, setDragging] = useState(false);
+
   const [mappings, setMappings] = useState({
     email: "",
     firstName: "",
     lastName: "",
   });
 
-  const handleFileChange = (e) => {
-    const selectedFile = e.target.files[0];
+  const processFile = (selectedFile) => {
     if (!selectedFile) return;
+
+    if (!selectedFile.name.toLowerCase().endsWith(".csv")) {
+      alert("Please select a CSV file.");
+      return;
+    }
 
     setFile(selectedFile);
 
-    // Read first line for CSV header mapping preview
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target.result;
-      const firstLine = content.split("\n")[0];
+
+    reader.onload = (e) => {
+      const text = e.target.result;
+
+      const firstLine = text.split(/\r?\n/)[0];
+
       const parsedHeaders = firstLine
         .split(",")
         .map((h) => h.trim().replace(/^"|"$/g, ""));
+
       setHeaders(parsedHeaders);
 
-      // Auto-map common names
-      const autoMap = { email: "", firstName: "", lastName: "" };
-      parsedHeaders.forEach((h) => {
-        const lower = h.toLowerCase();
-        if (lower.includes("email")) autoMap.email = h;
-        if (lower.includes("first") || lower.includes("fname"))
-          autoMap.firstName = h;
-        if (lower.includes("last") || lower.includes("lname"))
-          autoMap.lastName = h;
+      const autoMap = {
+        email: "",
+        firstName: "",
+        lastName: "",
+      };
+
+      parsedHeaders.forEach((header) => {
+        const lower = header.toLowerCase();
+
+        if (lower.includes("email")) autoMap.email = header;
+
+        if (
+          lower.includes("firstname") ||
+          lower.includes("first_name") ||
+          lower.includes("fname") ||
+          lower === "first"
+        ) {
+          autoMap.firstName = header;
+        }
+
+        if (
+          lower.includes("lastname") ||
+          lower.includes("last_name") ||
+          lower.includes("lname") ||
+          lower === "last"
+        ) {
+          autoMap.lastName = header;
+        }
       });
+
       setMappings(autoMap);
     };
+
     reader.readAsText(selectedFile);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragging(false);
+
+    if (e.dataTransfer.files.length) {
+      processFile(e.dataTransfer.files[0]);
+    }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+
     if (!file || !mappings.email) return;
-    onImportSubmit?.({ file, mappings });
+
+    onImportSubmit?.({
+      file,
+      mappings,
+    });
   };
 
+  const fileSize = file ? `${(file.size / 1024).toFixed(1)} KB` : "";
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6 shadow-sm max-w-2xl mx-auto">
-      <div>
-        <h3 className="text-lg font-bold text-gray-900">
-          Import Contacts from CSV
-        </h3>
-        <p className="text-xs text-gray-500 mt-1">
-          Upload your customer list to map fields and sync with your workspace.
-        </p>
+    <div className="mx-auto max-w-4xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
+      {/* Header */}
+
+      <div className="bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 px-8 py-7 text-white">
+        <div className="flex items-center gap-4">
+          <div className="rounded-2xl bg-white/20 p-3">
+            <FileSpreadsheet size={34} />
+          </div>
+
+          <div>
+            <h2 className="text-2xl font-bold">Import Contacts</h2>
+
+            <p className="mt-1 text-sm text-indigo-100">
+              Upload a CSV file and map your columns before importing.
+            </p>
+          </div>
+        </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* File Input */}
-        <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-indigo-500 transition-colors">
+      <form onSubmit={handleSubmit} className="space-y-8 p-8">
+        {/* Upload */}
+
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          className={`rounded-2xl border-2 border-dashed p-10 text-center transition ${
+            dragging
+              ? "border-indigo-500 bg-indigo-50"
+              : "border-slate-300 hover:border-indigo-400 hover:bg-slate-50"
+          }`}
+        >
           <input
+            id="csv-upload"
             type="file"
             accept=".csv"
-            onChange={handleFileChange}
-            id="csv-file-input"
             className="hidden"
+            onChange={(e) => processFile(e.target.files[0])}
           />
-          <label
-            htmlFor="csv-file-input"
-            className="cursor-pointer space-y-2 block"
-          >
-            <div className="text-sm font-semibold text-indigo-600">
-              {file ? file.name : "Click to upload CSV file"}
-            </div>
-            <p className="text-xs text-gray-400">
-              Supported format: .csv containing headers
+
+          <label htmlFor="csv-upload" className="cursor-pointer">
+            <UploadCloud size={56} className="mx-auto text-indigo-600" />
+
+            <h3 className="mt-4 text-lg font-bold text-slate-800">
+              Drag & Drop CSV
+            </h3>
+
+            <p className="mt-2 text-sm text-slate-500">
+              or click to browse your computer
+            </p>
+
+            <p className="mt-4 text-xs text-slate-400">
+              Supports CSV files with header row
             </p>
           </label>
         </div>
 
-        {/* Column Mapping Section */}
-        {headers.length > 0 && (
-          <div className="space-y-4 border-t pt-4">
-            <h4 className="text-xs font-bold uppercase text-gray-500 tracking-wider">
-              Map CSV Headers to Fields
-            </h4>
+        {/* Selected File */}
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Email <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={mappings.email}
-                  onChange={(e) =>
-                    setMappings({ ...mappings, email: e.target.value })
-                  }
-                  className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                  required
-                >
-                  <option value="">-- Select Column --</option>
-                  {headers.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
+        {file && (
+          <div className="rounded-xl border border-green-200 bg-green-50 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="text-green-600" />
+
+                <div>
+                  <div className="font-semibold text-slate-800">
+                    {file.name}
+                  </div>
+
+                  <div className="text-sm text-slate-500">{fileSize}</div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  First Name
-                </label>
-                <select
-                  value={mappings.firstName}
-                  onChange={(e) =>
-                    setMappings({ ...mappings, firstName: e.target.value })
-                  }
-                  className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                >
-                  <option value="">-- Optional --</option>
-                  {headers.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Last Name
-                </label>
-                <select
-                  value={mappings.lastName}
-                  onChange={(e) =>
-                    setMappings({ ...mappings, lastName: e.target.value })
-                  }
-                  className="w-full border rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                >
-                  <option value="">-- Optional --</option>
-                  {headers.map((h) => (
-                    <option key={h} value={h}>
-                      {h}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setFile(null);
+                  setHeaders([]);
+                }}
+                className="rounded-lg p-2 hover:bg-red-100"
+              >
+                <X className="text-red-600" size={18} />
+              </button>
             </div>
           </div>
         )}
 
-        {/* Controls */}
-        <div className="flex justify-end gap-3 pt-4 border-t">
+        {/* Mapping */}
+
+        {headers.length > 0 && (
+          <div>
+            <div className="mb-6 flex items-center gap-3">
+              <AlertCircle className="text-indigo-600" />
+
+              <h3 className="text-lg font-bold text-slate-800">
+                Column Mapping
+              </h3>
+            </div>
+
+            <div className="grid gap-6 md:grid-cols-3">
+              <Field
+                label="Email Address"
+                required
+                value={mappings.email}
+                options={headers}
+                onChange={(v) =>
+                  setMappings({
+                    ...mappings,
+                    email: v,
+                  })
+                }
+              />
+
+              <Field
+                label="First Name"
+                value={mappings.firstName}
+                options={headers}
+                onChange={(v) =>
+                  setMappings({
+                    ...mappings,
+                    firstName: v,
+                  })
+                }
+              />
+
+              <Field
+                label="Last Name"
+                value={mappings.lastName}
+                options={headers}
+                onChange={(v) =>
+                  setMappings({
+                    ...mappings,
+                    lastName: v,
+                  })
+                }
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Tips */}
+
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+          <h4 className="font-semibold text-amber-900">CSV Requirements</h4>
+
+          <ul className="mt-3 space-y-2 text-sm text-amber-800">
+            <li>• Email column is required.</li>
+
+            <li>• First Name and Last Name are optional.</li>
+
+            <li>• Duplicate email addresses will be ignored.</li>
+
+            <li>• Maximum recommended file size: 10 MB.</li>
+
+            <li>• UTF-8 encoded CSV files are recommended.</li>
+          </ul>
+        </div>
+
+        {/* Buttons */}
+
+        <div className="flex justify-end gap-4 border-t pt-6">
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 border rounded-lg text-sm text-gray-600 hover:bg-gray-50"
+            className="rounded-xl border border-slate-300 px-6 py-3 font-semibold text-slate-700 hover:bg-slate-100"
           >
             Cancel
           </button>
+
           <button
             type="submit"
             disabled={!file || !mappings.email}
-            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-lg disabled:opacity-50 transition"
+            className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-8 py-3 font-semibold text-white shadow-lg transition hover:scale-[1.02] hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Start Import
+            Import Contacts
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function Field({ label, required, value, options, onChange }) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-semibold text-slate-700">
+        {label}
+
+        {required && <span className="ml-1 text-red-500">*</span>}
+      </label>
+
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500"
+      >
+        <option value="">Select Column</option>
+
+        {options.map((header) => (
+          <option key={header} value={header}>
+            {header}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }

@@ -1,74 +1,243 @@
 import React from "react";
+import {
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  MailOpen,
+  Clock3,
+  Activity,
+} from "lucide-react";
 
 /**
- * Audit stream displaying recent email logs, campaign launches, and bounce events.
+ * Live email delivery activity stream.
+ * Shows recent sends, opens, bounces and worker events.
  */
 export default function RecentActivity({ logs = [] }) {
-  const getBadgeStyle = (status) => {
+  const getStatusConfig = (status) => {
     switch (status?.toLowerCase()) {
       case "delivered":
-        return "bg-green-100 text-green-800";
+        return {
+          label: "Delivered",
+          icon: CheckCircle2,
+          badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
+          iconColor: "text-emerald-600",
+        };
+
       case "bounced":
-        return "bg-amber-100 text-amber-800";
+        return {
+          label: "Bounced",
+          icon: AlertTriangle,
+          badge: "bg-amber-50 text-amber-700 border-amber-200",
+          iconColor: "text-amber-600",
+        };
+
       case "failed":
-        return "bg-red-100 text-red-800";
+        return {
+          label: "Failed",
+          icon: XCircle,
+          badge: "bg-red-50 text-red-700 border-red-200",
+          iconColor: "text-red-600",
+        };
+
       case "opened":
-        return "bg-blue-100 text-blue-800";
+        return {
+          label: "Opened",
+          icon: MailOpen,
+          badge: "bg-blue-50 text-blue-700 border-blue-200",
+          iconColor: "text-blue-600",
+        };
+
       default:
-        return "bg-gray-100 text-gray-700";
+        return {
+          label: "Pending",
+          icon: Clock3,
+          badge: "bg-gray-50 text-gray-700 border-gray-200",
+          iconColor: "text-gray-500",
+        };
     }
   };
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-xs overflow-hidden">
-      <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+    <section
+      className="
+        overflow-hidden
+        rounded-2xl
+        border border-gray-200
+        bg-white
+        shadow-sm
+      "
+    >
+      {/* Header */}
+      <div
+        className="
+          flex items-center justify-between
+          border-b border-gray-100
+          p-6
+        "
+      >
         <div>
-          <h3 className="font-bold text-gray-900">Live Dispatch Activity</h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Real-time log stream from sending workers
+          <div className="flex items-center gap-2">
+            <Activity size={20} className="text-indigo-600" />
+
+            <h3 className="text-lg font-bold text-gray-900">
+              Live Dispatch Activity
+            </h3>
+          </div>
+
+          <p className="mt-1 text-sm text-gray-500">
+            Real-time events from email workers
           </p>
         </div>
-        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          Live Feed
-        </span>
+
+        <div
+          className="
+            flex items-center gap-2
+            rounded-full
+            bg-emerald-50
+            px-3 py-1.5
+            text-xs
+            font-semibold
+            text-emerald-700
+          "
+        >
+          <span
+            className="
+              h-2 w-2
+              rounded-full
+              bg-emerald-500
+              animate-pulse
+            "
+          />
+          Worker Online
+        </div>
       </div>
 
+      {/* Activity List */}
       <div className="divide-y divide-gray-100">
         {logs.length === 0 ? (
-          <div className="p-8 text-center text-sm text-gray-400">
-            No recent delivery logs recorded.
+          <div
+            className="
+              flex flex-col
+              items-center
+              justify-center
+              py-12
+              text-center
+            "
+          >
+            <Activity size={40} className="text-gray-300" />
+
+            <p className="mt-3 text-sm text-gray-500">
+              No delivery activity yet
+            </p>
+
+            <span className="text-xs text-gray-400 mt-1">
+              Email worker events will appear here
+            </span>
           </div>
         ) : (
-          logs.slice(0, 6).map((log, idx) => (
-            <div
-              key={log._id || idx}
-              className="p-4 hover:bg-gray-50/80 transition-colors flex items-center justify-between"
-            >
-              <div className="space-y-0.5">
-                <p className="text-sm font-semibold text-gray-900">
-                  {log.recipient}
-                </p>
-                <p className="text-xs text-gray-500 truncate max-w-xs sm:max-w-md">
-                  {log.subject || "No Subject"}
-                </p>
-              </div>
-              <div className="text-right space-y-1">
-                <span
-                  className={`inline-block px-2 py-0.5 rounded text-xs font-bold uppercase tracking-wider ${getBadgeStyle(log.status)}`}
+          logs.slice(0, 8).map((log, index) => {
+            const status = getStatusConfig(log.status);
+
+            const StatusIcon = status.icon;
+
+            return (
+              <div
+                key={log._id || index}
+                className="
+                  group
+                  flex items-center
+                  justify-between
+                  gap-4
+                  p-5
+                  transition-all
+                  hover:bg-gray-50
+                "
+              >
+                {/* Left */}
+                <div className="flex items-center gap-4 min-w-0">
+                  <div
+                    className="
+                      flex h-10 w-10
+                      items-center justify-center
+                      rounded-xl
+                      bg-gray-100
+                    "
+                  >
+                    <MailOpen size={18} className="text-gray-600" />
+                  </div>
+
+                  <div className="min-w-0">
+                    <p
+                      className="
+                        truncate
+                        text-sm
+                        font-semibold
+                        text-gray-900
+                      "
+                    >
+                      {log.recipient || "Unknown recipient"}
+                    </p>
+
+                    <p
+                      className="
+                        truncate
+                        text-xs
+                        text-gray-500
+                        max-w-xs
+                      "
+                    >
+                      {log.subject || "No subject"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Right */}
+
+                <div
+                  className="
+                    flex
+                    flex-col
+                    items-end
+                    gap-2
+                  "
                 >
-                  {log.status || "Pending"}
-                </span>
-                <p className="text-xs text-gray-400 block">
-                  {log.timestamp
-                    ? new Date(log.timestamp).toLocaleTimeString()
-                    : "Just now"}
-                </p>
+                  <span
+                    className={`
+                      inline-flex
+                      items-center
+                      gap-1.5
+                      rounded-full
+                      border
+                      px-2.5
+                      py-1
+                      text-[11px]
+                      font-bold
+                      uppercase
+                      tracking-wide
+                      ${status.badge}
+                    `}
+                  >
+                    <StatusIcon size={13} className={status.iconColor} />
+
+                    {status.label}
+                  </span>
+
+                  <span
+                    className="
+                      text-xs
+                      text-gray-400
+                    "
+                  >
+                    {log.timestamp
+                      ? new Date(log.timestamp).toLocaleTimeString()
+                      : "Just now"}
+                  </span>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
-    </div>
+    </section>
   );
 }
