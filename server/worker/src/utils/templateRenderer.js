@@ -1,34 +1,31 @@
-/**
- * @file templateRenderer.js
- * @description Lightweight template rendering engine for merge tag replacement.
- */
+import logger from "./logger.js";
 
 /**
- * Replaces double-curly tags in HTML/text strings with recipient attributes.
- * @param {string} template - HTML string containing {{variable}} placeholders
- * @param {Object} context - Recipient merge data dictionary
- * @returns {string} Rendered content
+ * Basic template interpolation replacing {{key}} with values from payload.
+ *
+ * @param {string} template - The HTML or plain text string template.
+ * @param {Object} data - The contact/variables object to interpolate.
+ * @returns {string} Rendered template.
  */
-function renderTemplate(template, context = {}) {
-  if (!template) return "";
+export const renderTemplate = (template = "", data = {}) => {
+  try {
+    if (!template) return "";
 
-  return template.replace(/\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g, (match, key) => {
-    const keys = key.split(".");
-    let value = context;
-
-    for (const k of keys) {
-      if (value && Object.prototype.hasOwnProperty.call(value, k)) {
-        value = value[k];
-      } else {
-        value = undefined;
-        break;
-      }
-    }
-
-    return value !== undefined && value !== null ? String(value) : "";
-  });
-}
-
-module.exports = {
-  renderTemplate,
+    return template.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (match, key) => {
+      const value = key
+        .split(".")
+        .reduce(
+          (obj, k) => (obj && obj[k] !== undefined ? obj[k] : undefined),
+          data,
+        );
+      return value !== undefined ? value : "";
+    });
+  } catch (error) {
+    logger.error(
+      `[TemplateRenderer] Error rendering template: ${error.message}`,
+    );
+    return template;
+  }
 };
+
+export default renderTemplate;

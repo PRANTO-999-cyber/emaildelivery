@@ -1,62 +1,26 @@
-// server/worker/jobs/scheduler.js
-
 import cron from "node-cron";
+import logger from "../utils/logger.js";
 
-import cleanupJob from "./cleanup.job.js";
-import domainHealthCheckJob from "./domainHealthCheck.job.js";
-import monitorJob from "./monitor.job.js";
-import reportJob from "./report.job.js";
+// Jobs
+import { runCleanupJob } from "./cleanup.job.js";
+import { runDomainHealthCheck } from "./domainHealthCheck.job.js";
+import { runMonitorJob } from "./monitor.job.js";
+import { runReportJob } from "./report.job.js";
 
-import logger from "../config/logger.js";
+export const startScheduler = () => {
+  logger.info("[Scheduler] Initializing cron schedules...");
 
-const startScheduler = () => {
-  logger.info("Starting worker scheduler...");
-
-  // -------------------------------------
-  // Monitor System
-  // Every 5 Minutes
-  // -------------------------------------
-
-  cron.schedule("*/5 * * * *", async () => {
-    logger.info("Running monitor job...");
-
-    await monitorJob();
+  // Example: Run domain health check every hour
+  cron.schedule("0 * * * *", async () => {
+    logger.info("[Cron] Running domain health check...");
+    await runDomainHealthCheck();
   });
 
-  // -------------------------------------
-  // Domain Health Check
-  // Every 6 Hours
-  // -------------------------------------
-
-  cron.schedule("0 */6 * * *", async () => {
-    logger.info("Running domain health check...");
-
-    await domainHealthCheckJob();
-  });
-
-  // -------------------------------------
-  // Daily Report
-  // Every Day at 12:00 AM
-  // -------------------------------------
-
+  // Example: Run database cleanup daily at midnight
   cron.schedule("0 0 * * *", async () => {
-    logger.info("Generating daily report...");
-
-    await reportJob();
+    logger.info("[Cron] Running system cleanup...");
+    await runCleanupJob();
   });
-
-  // -------------------------------------
-  // Cleanup
-  // Every Day at 2:00 AM
-  // -------------------------------------
-
-  cron.schedule("0 2 * * *", async () => {
-    logger.info("Running cleanup job...");
-
-    await cleanupJob();
-  });
-
-  logger.success("All scheduled jobs registered successfully.");
 };
 
 export default startScheduler;

@@ -1,114 +1,94 @@
-// server/worker/processors/email.processor.js
+import { Worker } from "bullmq";
+import redisConnection from "../utils/redis.connection.js";
+import { sendEmailViaPool } from "../utils/smtpPool.js";
+import { renderTemplate } from "../utils/templateRenderer.js";
+import logger from "../utils/logger.js";
+import Campaign from "../../../src/models/Campaign.js";
+import Contact from "../../../src/models/Contact.js";
 
-import nodemailer from "nodemailer";
+/**
+ * Core processing function for individual email jobs.
+ *
+ * @param {import('bullmq').Job} job - BullMQ job containing payload details.
+ */
+export const processEmailJob = async (job) => {
+  const { campaignId, contactId, tenantId, subject, templateBody } = job.data;
 
-import Campaign from "../../models/Campaign.js";
-import SMTP from "../../models/SMTP.js";
-import Tracking from "../../models/Tracking.js";
-
-import logger from "../config/logger.js";
-
-const createTransport = async (smtpId) => {
-  const smtp = await SMTP.findById(smtpId);
-
-  if (!smtp) {
-    throw new Error("SMTP account not found.");
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: smtp.host,
-    port: smtp.port,
-    secure: smtp.secure,
-    auth: {
-      user: smtp.username,
-      pass: smtp.password,
-    },
-  });
-
-  return {
-    transporter,
-    smtp,
-  };
-};
-
-const updateCampaign = async (campaignId, field) => {
-  await Campaign.findByIdAndUpdate(campaignId, {
-    $inc: {
-      [field]: 1,
-    },
-  });
-};
-
-export const processEmail = async (job) => {
-  const {
-    campaignId,
-    smtpId,
-    recipient,
-    subject,
-    html,
-    text,
-    from,
-    metadata = {},
-  } = job.data;
-
-  logger.info(`Processing email job ${job.id}`);
+  logger.info(
+    `[EmailProcessor] Processing job ${job.id} for Campaign: ${campaignId}`,
+  );
 
   try {
-    const { transporter, smtp } = await createTransport(smtpId);
+    // 1. Fetch Contact Details
+    const contact = await Contact.findOne({ _id: contactId, tenantId });
+    if (!contact) {
+      throw new Error(
+        `Contact with ID ${contactId} not found for tenant ${tenantId}`,
+      );
+    }
 
-    const info = await transporter.sendMail({
-      from,
-      to: recipient,
-      subject,
-      html,
-      text,
+    // 2. Render HTML Template
+    const htmlContent = renderTemplate(templateBody, {
+      firstName: contact.firstName || "Subscriber",
+      email: contact.email,
+      ...contact.customAttributes,
     });
 
-    await Tracking.create({
-      campaign: campaignId,
-      smtp: smtpId,
-      email: recipient,
-      event: "sent",
-      messageId: info.messageId,
-      metadata,
+    // 3. Dispatch Email via SMTP Pool
+    const sendResult = await sendEmailViaPool({
+      to: contact.email,
+      subject: subject,
+      html: htmlContent,
+      tenantId: tenantId,
     });
 
-    await updateCampaign(campaignId, "sent");
+    // 4. Increment Delivered Count on Campaign
+    await Campaign.updateOne(
+      { _id: campaignId },
+      { $inc: { "stats.sent": 1 } },
+    );
 
-    await SMTP.findByIdAndUpdate(smtpId, {
-      $inc: {
-        totalSent: 1,
-      },
-    });
+    logger.info(
+      `[EmailProcessor] Successfully sent email to ${contact.email} (MessageID: ${sendResult.messageId})`,
+    );
 
-    logger.success(`Email sent to ${recipient}`);
-
-    return {
-      success: true,
-      messageId: info.messageId,
-    };
+    return { status: "DELIVERED", messageId: sendResult.messageId };
   } catch (error) {
-    logger.error(`Email failed for ${recipient}`, error);
+    logger.error(`[EmailProcessor] Error in job ${job.id}: ${error.message}`);
 
-    await Tracking.create({
-      campaign: campaignId,
-      smtp: smtpId,
-      email: recipient,
-      event: "failed",
-      reason: error.message,
-      metadata,
-    });
+    // Increment Failed Count on Campaign
+    await Campaign.updateOne(
+      { _id: campaignId },
+      { $inc: { "stats.failed": 1 } },
+    ).catch((err) =>
+      logger.error(
+        `[EmailProcessor] Failed to update campaign stats: ${err.message}`,
+      ),
+    );
 
-    await updateCampaign(campaignId, "failed");
-
-    await SMTP.findByIdAndUpdate(smtpId, {
-      $inc: {
-        failed: 1,
-      },
-    });
-
-    throw error;
+    throw error; // Rethrowing forces BullMQ to handle retry/fail logic
   }
 };
 
-export default processEmail;
+/**
+ * BullMQ Worker Instance
+ */
+export const emailWorker = new Worker("email-queue", processEmailJob, {
+  connection: redisConnection,
+  concurrency: 10, // Number of simultaneous jobs to process
+});
+
+// Worker Lifecycle Events
+emailWorker.on("completed", (job, result) => {
+  logger.info(
+    `[Worker Event] Job ${job.id} completed successfully. MessageID: ${result?.messageId}`,
+  );
+});
+
+emailWorker.on("failed", (job, err) => {
+  logger.error(
+    `[Worker Event] Job ${job?.id} failed with error: ${err.message}`,
+  );
+});
+
+export default emailWorker;

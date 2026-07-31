@@ -1,62 +1,40 @@
-/**
- * @file smtpPool.js
- * @description Connection pool factory for outbound SMTP transports.
- */
-
-const nodemailer = require("nodemailer");
-const logger = require("./logger");
-
-const poolCache = new Map();
+import nodemailer from "nodemailer";
+import logger from "./logger.js";
 
 /**
- * Gets or creates a pooled Nodemailer SMTP transport instance.
- * @param {Object} smtpConfig - SMTP credentials & server options
- * @returns {import('nodemailer').Transporter}
+ * Dispatches email using nodemailer transport pool.
+ *
+ * @param {Object} options
+ * @param {string} options.to - Recipient email address
+ * @param {string} options.subject - Email subject
+ * @param {string} options.html - HTML body content
+ * @param {string} options.tenantId - Associated tenant ID
  */
-function getSmtpTransport(smtpConfig) {
-  const poolKey = `${smtpConfig.host}:${smtpConfig.port}:${smtpConfig.auth?.user || "anon"}`;
-
-  if (poolCache.has(poolKey)) {
-    return poolCache.get(poolKey);
-  }
-
+export const sendEmailViaPool = async ({ to, subject, html, tenantId }) => {
   logger.info(
-    `[SMTP Pool] Initializing new connection pool for: ${smtpConfig.host}`,
+    `[SMTPPool] Simulating/Sending email to ${to} for tenant ${tenantId}`,
   );
 
+  // Example Nodemailer test transport (Replace with your actual SMTP transport configuration/pool)
   const transporter = nodemailer.createTransport({
-    host: smtpConfig.host,
-    port: smtpConfig.port || 587,
-    secure: smtpConfig.secure ?? false, // true for 465, false for other ports
-    auth: smtpConfig.auth
-      ? {
-          user: smtpConfig.auth.user,
-          pass: smtpConfig.auth.pass,
-        }
-      : undefined,
-    pool: true,
-    maxConnections: smtpConfig.maxConnections || 10,
-    maxMessages: smtpConfig.maxMessages || 100,
-    rateDelta: 1000,
-    rateLimit: smtpConfig.rateLimit || 50, // max 50 emails/sec per connection
+    host: process.env.SMTP_HOST || "smtp.mailtrap.io",
+    port: Number(process.env.SMTP_PORT) || 2525,
+    auth: {
+      user: process.env.SMTP_USER || "",
+      pass: process.env.SMTP_PASS || "",
+    },
   });
 
-  poolCache.set(poolKey, transporter);
-  return transporter;
-}
+  const mailOptions = {
+    from:
+      process.env.SMTP_FROM || '"Email Service" <no-reply@emaildelivery.com>',
+    to,
+    subject,
+    html,
+  };
 
-/**
- * Closes all cached SMTP transport pools on worker shutdown.
- */
-async function closeAllPools() {
-  logger.info("[SMTP Pool] Closing all cached SMTP transports...");
-  for (const [key, transporter] of poolCache.entries()) {
-    transporter.close();
-    poolCache.delete(key);
-  }
-}
-
-module.exports = {
-  getSmtpTransport,
-  closeAllPools,
+  const info = await transporter.sendMail(mailOptions);
+  return { messageId: info.messageId || `msg_${Date.now()}` };
 };
+
+export default sendEmailViaPool;

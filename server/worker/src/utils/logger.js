@@ -1,33 +1,26 @@
-/**
- * @file logger.js
- * @description Centralized logging utility for background worker processes.
- */
+import winston from "winston";
 
-const winston = require("winston");
-
-const logger = winston.createLogger({
+export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || "info",
   format: winston.format.combine(
-    winston.format.timestamp(),
+    winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
     winston.format.errors({ stack: true }),
+    winston.format.splat(),
     winston.format.json(),
   ),
-  defaultMeta: { service: "email-worker-service" },
+  defaultMeta: { service: "worker-service" },
   transports: [
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize(),
         winston.format.printf(
-          ({ timestamp, level, message, service, ...meta }) => {
-            const metaString = Object.keys(meta).length
-              ? JSON.stringify(meta)
-              : "";
-            return `[${timestamp}] [${service}] ${level}: ${message} ${metaString}`;
-          },
+          ({ timestamp, level, message, stack }) =>
+            `[${timestamp}] [${level}]: ${stack || message}`,
         ),
       ),
     }),
   ],
 });
 
-module.exports = logger;
+// Provide default export as well for flexibility
+export default logger;

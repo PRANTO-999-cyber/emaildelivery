@@ -1,161 +1,70 @@
-/**
- * @file bounce.processor.js
- * @description Background Queue Processor for Async Bounce & Telemetry Events.
- * Evaluates bounce severity (hard vs soft), updates suppression lists, and monitors tenant circuit breakers.
- */
+import { Worker } from "bullmq";
 
-const { Contact } = require("../models/contact.model");
-const { Campaign } = require("../models/campaign.model");
-const { Suppression } = require("../models/suppression.model");
-const { TenantMetrics } = require("../models/tenantMetrics.model");
-const logger = require("../utils/logger");
+// Worker Utilities
+import logger from "../utils/logger.js";
+import redisConnection from "../utils/redis.connection.js";
 
-// Circuit breaker threshold: 5% bounce rate on active dispatches
-const BOUNCE_CIRCUIT_BREAKER_THRESHOLD = 0.05;
+// Database Models (pointing to server/src/models/)
+import Contact from "../../../src/models/Contact.js";
+import Campaign from "../../../src/models/Campaign.js";
 
 /**
- * Normalizes vendor-specific bounce codes into system standards.
- * @param {string|number} rawCode - Raw SMTP or provider status code
- * @returns {'HARD'|'SOFT'|'COMPLAINT'} Normalized bounce type
- */
-function classifyBounceType(rawCode) {
-  const codeStr = String(rawCode);
-
-  // 5xx codes or explicit hard-bounce indicators
-  if (
-    codeStr.startsWith("5") ||
-    codeStr.includes("550") ||
-    codeStr.includes("user_unknown")
-  ) {
-    return "HARD";
-  }
-
-  // Spam complaint feedback loop signals
-  if (
-    codeStr.includes("spam") ||
-    codeStr.includes("abuse") ||
-    codeStr.includes("complaint")
-  ) {
-    return "COMPLAINT";
-  }
-
-  // Temporary failure / 4xx codes
-  return "SOFT";
-}
-
-/**
- * Primary BullMQ job processing function for bounce events.
+ * Process hard and soft email bounce events.
  *
- * @param {Object} job - BullMQ Job Object
- * @param {Object} job.data - Ingested webhook event payload
- * @param {string} job.data.tenantId - Multi-tenant workspace ID
- * @param {string} job.data.campaignId - Dispatched campaign ID
- * @param {string} job.data.email - Target recipient email address
- * @param {string|number} job.data.bounceCode - SMTP or provider status code
- * @param {string} job.data.reason - Raw failure reason string
- * @param {string} job.data.provider - ESP provider name (e.g., 'ses', 'mailgun')
+ * @param {import('bullmq').Job} job - BullMQ job containing bounce details.
  */
-async function processBounceJob(job) {
-  const { tenantId, campaignId, email, bounceCode, reason, provider } =
-    job.data;
+export const processBounceJob = async (job) => {
+  const { campaignId, contactId, tenantId, bounceType, reason } = job.data;
 
   logger.info(
-    `[Bounce Processor] Processing event for email: ${email} (Tenant: ${tenantId})`,
+    `[BounceProcessor] Processing ${bounceType} bounce for Contact: ${contactId}`,
   );
 
-  const bounceCategory = classifyBounceType(bounceCode);
-
   try {
-    // 1. Log or update suppression list for Hard Bounces and Complaints
-    if (bounceCategory === "HARD" || bounceCategory === "COMPLAINT") {
-      await Suppression.updateOne(
-        { tenantId, email: email.toLowerCase() },
-        {
-          $set: {
-            tenantId,
-            email: email.toLowerCase(),
-            reason:
-              reason || `Permanent deliverability failure (${bounceCategory})`,
-            type: bounceCategory,
-            provider,
-            sourceCampaignId: campaignId,
-            updatedAt: new Date(),
-          },
-        },
-        { upsert: true },
-      );
-
-      // Flag contact status as unsubscribed/bounced in the primary database
+    // If Hard Bounce, mark contact as unsubscribed/bounced
+    if (bounceType === "HARD") {
       await Contact.updateOne(
-        { tenantId, email: email.toLowerCase() },
-        {
-          $set: {
-            status: bounceCategory === "COMPLAINT" ? "complained" : "bounced",
-            deliverabilityState: "undeliverable",
-            updatedAt: new Date(),
-          },
-        },
-      );
-
-      logger.warn(
-        `[Bounce Processor] Added ${email} to suppression list. Reason: ${bounceCategory}`,
+        { _id: contactId, tenantId },
+        { $set: { status: "BOUNCED", bounceReason: reason } },
       );
     }
 
-    // 2. Increment campaign-level stats & recalculate ratios
+    // Update Campaign bounce counts
     if (campaignId) {
-      const campaign = await Campaign.findById(campaignId);
-      if (campaign) {
-        if (bounceCategory === "HARD") campaign.stats.hardBounces += 1;
-        if (bounceCategory === "SOFT") campaign.stats.softBounces += 1;
-        if (bounceCategory === "COMPLAINT") campaign.stats.complaints += 1;
-
-        const totalBounces =
-          campaign.stats.hardBounces + campaign.stats.softBounces;
-        const totalSent = campaign.stats.sent || 1;
-        const bounceRate = totalBounces / totalSent;
-
-        // 3. Circuit Breaker Check: Pause campaign if bounce threshold exceeded
-        if (
-          bounceRate > BOUNCE_CIRCUIT_BREAKER_THRESHOLD &&
-          campaign.status === "dispatching"
-        ) {
-          campaign.status = "paused_circuit_breaker";
-          campaign.circuitBreakerReason = `Hard bounce rate reached ${(bounceRate * 100).toFixed(2)}% (Threshold: ${BOUNCE_CIRCUIT_BREAKER_THRESHOLD * 100}%)`;
-
-          logger.error(
-            `[Circuit Breaker Triggered] Campaign ${campaignId} paused automatically. High bounce rate detected.`,
-          );
-        }
-
-        await campaign.save();
-      }
+      await Campaign.updateOne(
+        { _id: campaignId, tenantId },
+        { $inc: { "stats.bounces": 1 } },
+      );
     }
 
-    // 4. Update rolling 24h telemetry metrics for the tenant
-    await TenantMetrics.updateOne(
-      { tenantId },
-      {
-        $inc: {
-          totalBounces: 1,
-          ...(bounceCategory === "HARD" ? { hardBounces: 1 } : {}),
-          ...(bounceCategory === "COMPLAINT" ? { complaints: 1 } : {}),
-        },
-      },
-      { upsert: true },
+    logger.info(
+      `[BounceProcessor] Successfully processed bounce for Contact ${contactId}`,
     );
 
-    return { success: true, email, bounceCategory };
+    return { status: "PROCESSED", contactId, bounceType };
   } catch (error) {
-    logger.error(
-      `[Bounce Processor Error] Failed processing job ${job.id}:`,
-      error,
-    );
-    throw error; // Re-throw to allow BullMQ auto-retry
+    logger.error(`[BounceProcessor] Error in job ${job.id}: ${error.message}`);
+    throw error;
   }
-}
-
-module.exports = {
-  processBounceJob,
-  classifyBounceType,
 };
+
+/**
+ * BullMQ Bounce Worker Instance
+ */
+export const bounceWorker = new Worker("bounce-queue", processBounceJob, {
+  connection: redisConnection,
+  concurrency: 5,
+});
+
+bounceWorker.on("completed", (job) => {
+  logger.info(`[BounceWorker Event] Job ${job.id} completed successfully.`);
+});
+
+bounceWorker.on("failed", (job, err) => {
+  logger.error(
+    `[BounceWorker Event] Job ${job?.id} failed with error: ${err.message}`,
+  );
+});
+
+// Provides default export so 'import bounceProcessor from ...' works seamlessly
+export default bounceWorker;

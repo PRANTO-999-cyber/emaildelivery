@@ -1,96 +1,31 @@
-// server/worker/jobs/cleanup.job.js
+import logger from "../utils/logger.js";
 
-import Campaign from "../../models/Campaign.js";
-import Tracking from "../../models/Tracking.js";
-import Webhook from "../../models/Webhook.js";
-import Warmup from "../../models/Warmup.js";
-import User from "../../models/User.js";
-import logger from "../config/logger.js";
+// Database Models (pointing to server/src/models/)
+import Campaign from "../../../src/models/Campaign.js";
 
-const DAYS = (days) => {
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-};
-
-export const cleanupJob = async () => {
-  logger.info("Starting cleanup job...");
+/**
+ * Periodically cleans up archived or expired data.
+ */
+export const runCleanupJob = async () => {
+  logger.info("[CleanupJob] Starting database cleanup task...");
 
   try {
-    // ---------------------------------------
-    // Delete old webhook logs (30 days)
-    // ---------------------------------------
+    const thresholdDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
 
-    const webhookResult = await Webhook.deleteMany({
-      createdAt: {
-        $lt: DAYS(30),
-      },
-    });
-
-    logger.info(`Deleted ${webhookResult.deletedCount} webhook logs`);
-
-    // ---------------------------------------
-    // Delete old tracking records (90 days)
-    // ---------------------------------------
-
-    const trackingResult = await Tracking.deleteMany({
-      createdAt: {
-        $lt: DAYS(90),
-      },
-    });
-
-    logger.info(`Deleted ${trackingResult.deletedCount} tracking records`);
-
-    // ---------------------------------------
-    // Remove expired password reset tokens
-    // ---------------------------------------
-
-    const userResult = await User.updateMany(
-      {
-        resetPasswordExpire: {
-          $lt: new Date(),
-        },
-      },
-      {
-        $unset: {
-          resetPasswordToken: "",
-          resetPasswordExpire: "",
-        },
-      },
+    // Example cleanup: Archive completed campaigns older than 30 days
+    const result = await Campaign.updateMany(
+      { status: "COMPLETED", updatedAt: { $lt: thresholdDate } },
+      { $set: { status: "ARCHIVED" } },
     );
 
     logger.info(
-      `Cleared ${userResult.modifiedCount} expired password reset tokens`,
+      `[CleanupJob] Successfully archived ${result.modifiedCount} old campaigns.`,
     );
-
-    // ---------------------------------------
-    // Delete cancelled campaigns older than 60 days
-    // ---------------------------------------
-
-    const campaignResult = await Campaign.deleteMany({
-      status: "cancelled",
-      updatedAt: {
-        $lt: DAYS(60),
-      },
-    });
-
-    logger.info(`Deleted ${campaignResult.deletedCount} cancelled campaigns`);
-
-    // ---------------------------------------
-    // Delete completed warmups older than 30 days
-    // ---------------------------------------
-
-    const warmupResult = await Warmup.deleteMany({
-      status: "completed",
-      updatedAt: {
-        $lt: DAYS(30),
-      },
-    });
-
-    logger.info(`Deleted ${warmupResult.deletedCount} completed warmups`);
-
-    logger.success("Cleanup job completed successfully.");
+    return { status: "SUCCESS", archivedCount: result.modifiedCount };
   } catch (error) {
-    logger.error("Cleanup job failed.", error);
+    logger.error(`[CleanupJob] Task failed: ${error.message}`);
+    throw error;
   }
 };
 
-export default cleanupJob;
+export default runCleanupJob;

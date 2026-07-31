@@ -1,94 +1,85 @@
-// server/worker/processors/analytics.processor.js
+import { Worker } from "bullmq";
 
-import Campaign from "../../models/Campaign.js";
-import Tracking from "../../models/Tracking.js";
-import User from "../../models/User.js";
-import logger from "../config/logger.js";
+// Worker Utilities
+import logger from "../utils/logger.js";
+import redisConnection from "../utils/redis.connection.js";
 
-const incrementCampaignStat = async (campaignId, field) => {
-  await Campaign.findByIdAndUpdate(
-    campaignId,
-    {
-      $inc: {
-        [field]: 1,
-      },
-    },
-    {
-      new: true,
-    },
+// Database Models (pointing to server/src/models/)
+import Campaign from "../../../src/models/Campaign.js";
+
+/**
+ * Core processing function for analytics aggregation jobs.
+ *
+ * @param {import('bullmq').Job} job - BullMQ job containing payload details.
+ */
+export const processAnalyticsJob = async (job) => {
+  const { campaignId, eventType, tenantId, timestamp } = job.data;
+
+  logger.info(
+    `[AnalyticsProcessor] Tracking ${eventType} for Campaign: ${campaignId}`,
   );
-};
-
-export const processAnalytics = async (job) => {
-  const { campaignId, userId, email, event, metadata = {} } = job.data;
 
   try {
-    logger.info(`Processing analytics event: ${event}`);
+    const updateField =
+      eventType === "OPEN"
+        ? { "stats.opens": 1 }
+        : eventType === "CLICK"
+          ? { "stats.clicks": 1 }
+          : null;
 
-    await Tracking.create({
-      campaign: campaignId,
-      user: userId,
-      email,
-      event,
-      metadata,
-      createdAt: new Date(),
-    });
-
-    switch (event) {
-      case "sent":
-        await incrementCampaignStat(campaignId, "sent");
-        break;
-
-      case "delivered":
-        await incrementCampaignStat(campaignId, "delivered");
-        break;
-
-      case "opened":
-        await incrementCampaignStat(campaignId, "opened");
-        break;
-
-      case "clicked":
-        await incrementCampaignStat(campaignId, "clicked");
-        break;
-
-      case "bounced":
-        await incrementCampaignStat(campaignId, "bounced");
-        break;
-
-      case "failed":
-        await incrementCampaignStat(campaignId, "failed");
-        break;
-
-      case "spam":
-        await incrementCampaignStat(campaignId, "spam");
-        break;
-
-      case "unsubscribed":
-        await incrementCampaignStat(campaignId, "unsubscribed");
-        break;
-
-      default:
-        logger.warn(`Unknown analytics event: ${event}`);
+    if (!updateField) {
+      logger.warn(`[AnalyticsProcessor] Unrecognized event type: ${eventType}`);
+      return { status: "IGNORED" };
     }
 
-    if (userId && event === "sent") {
-      await User.findByIdAndUpdate(userId, {
-        $inc: {
-          emailsSent: 1,
-        },
-      });
+    // Increment analytics counter on Campaign
+    const result = await Campaign.updateOne(
+      { _id: campaignId, tenantId },
+      { $inc: updateField },
+    );
+
+    if (result.matchedCount === 0) {
+      throw new Error(
+        `Campaign not found: ${campaignId} for tenant ${tenantId}`,
+      );
     }
 
-    logger.success(`Analytics processed for campaign ${campaignId}`);
+    logger.info(
+      `[AnalyticsProcessor] Successfully updated ${eventType} count for Campaign ${campaignId}`,
+    );
 
-    return {
-      success: true,
-    };
+    return { status: "PROCESSED", campaignId, eventType };
   } catch (error) {
-    logger.error("Analytics processor failed.", error);
-
+    logger.error(
+      `[AnalyticsProcessor] Error in job ${job.id}: ${error.message}`,
+    );
     throw error;
   }
 };
 
-export default processAnalytics;
+/**
+ * BullMQ Analytics Worker Instance
+ */
+export const analyticsWorker = new Worker(
+  "analytics-queue",
+  processAnalyticsJob,
+  {
+    connection: redisConnection,
+    concurrency: 5,
+  },
+);
+
+// Worker Lifecycle Events
+analyticsWorker.on("completed", (job, result) => {
+  logger.info(
+    `[AnalyticsWorker Event] Job ${job.id} completed. Event: ${result?.eventType}`,
+  );
+});
+
+analyticsWorker.on("failed", (job, err) => {
+  logger.error(
+    `[AnalyticsWorker Event] Job ${job?.id} failed with error: ${err.message}`,
+  );
+});
+
+export default analyticsWorker;

@@ -1,88 +1,69 @@
-// server/worker/src/processors/warmup.processor.js
+import { Worker } from "bullmq";
 
-import nodemailer from "nodemailer";
+// Worker Utilities
+import logger from "../utils/logger.js";
+import redisConnection from "../utils/redis.connection.js";
 
-import SMTP from "../../../models/SMTP.js";
-import Warmup from "../../../models/Warmup.js";
+// Database Models (pointing to server/src/models/)
+import SMTP from "../../../src/models/SMTP.js";
 
-import logger from "../config/logger.js";
+/**
+ * Handles IP/Domain/SMTP account warm-up schedule progression.
+ *
+ * @param {import('bullmq').Job} job - BullMQ job containing warmup parameters.
+ */
+export const processWarmupJob = async (job) => {
+  const { smtpId, tenantId, dailyLimitIncrement } = job.data;
 
-const createTransport = async (smtpId) => {
-  const smtp = await SMTP.findById(smtpId);
-
-  if (!smtp) {
-    throw new Error("SMTP account not found.");
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: smtp.host,
-    port: smtp.port,
-    secure: smtp.secure,
-    auth: {
-      user: smtp.username,
-      pass: smtp.password,
-    },
-  });
-
-  return {
-    smtp,
-    transporter,
-  };
-};
-
-export const processWarmup = async (job) => {
-  const { warmupId, smtpId, recipient, subject, html, text } = job.data;
-
-  logger.info(`Starting warmup job ${job.id}`);
+  logger.info(
+    `[WarmupProcessor] Processing warm-up increment for SMTP ID: ${smtpId}`,
+  );
 
   try {
-    const { smtp, transporter } = await createTransport(smtpId);
+    const smtpConfig = await SMTP.findOne({ _id: smtpId, tenantId });
 
-    const info = await transporter.sendMail({
-      from: `"Warmup" <${smtp.fromEmail}>`,
-      to: recipient,
-      subject,
-      html,
-      text,
-    });
+    if (!smtpConfig) {
+      throw new Error(`SMTP configuration not found: ${smtpId}`);
+    }
 
-    await Warmup.findByIdAndUpdate(warmupId, {
-      $inc: {
-        totalSent: 1,
-      },
-      $set: {
-        lastSentAt: new Date(),
-        status: "running",
-      },
-    });
+    // Gradually ramp up daily send limit
+    const updatedLimit =
+      (smtpConfig.dailyLimit || 100) + (dailyLimitIncrement || 50);
 
-    await SMTP.findByIdAndUpdate(smtpId, {
-      $inc: {
-        warmupSent: 1,
-      },
-    });
+    await SMTP.updateOne(
+      { _id: smtpId, tenantId },
+      { $set: { dailyLimit: updatedLimit, lastWarmedAt: new Date() } },
+    );
 
-    logger.success(`Warmup email sent to ${recipient}`);
+    logger.info(
+      `[WarmupProcessor] Updated daily limit for SMTP ${smtpId} to ${updatedLimit}`,
+    );
 
-    return {
-      success: true,
-      messageId: info.messageId,
-    };
+    return { status: "WARMED", newLimit: updatedLimit };
   } catch (error) {
-    logger.error(`Warmup failed for ${recipient}`, error);
-
-    await Warmup.findByIdAndUpdate(warmupId, {
-      $inc: {
-        failed: 1,
-      },
-      $set: {
-        status: "failed",
-        lastError: error.message,
-      },
-    });
-
+    logger.error(`[WarmupProcessor] Error in job ${job.id}: ${error.message}`);
     throw error;
   }
 };
 
-export default processWarmup;
+/**
+ * BullMQ Warmup Worker Instance
+ */
+export const warmupWorker = new Worker("warmup-queue", processWarmupJob, {
+  connection: redisConnection,
+  concurrency: 2,
+});
+
+warmupWorker.on("completed", (job, result) => {
+  logger.info(
+    `[WarmupWorker Event] Job ${job.id} completed. New limit: ${result?.newLimit}`,
+  );
+});
+
+warmupWorker.on("failed", (job, err) => {
+  logger.error(
+    `[WarmupWorker Event] Job ${job?.id} failed with error: ${err.message}`,
+  );
+});
+
+export default warmupWorker;
