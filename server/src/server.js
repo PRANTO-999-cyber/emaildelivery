@@ -1,21 +1,29 @@
-// MUST BE AT THE TOP
-import dotenv from "dotenv";
-dotenv.config();
-
-// ... other imports follow below
 import express from "express";
-import mongoose from "mongoose";
+import cors from "cors";
+import "dotenv/config";
+import emailRoutes from "./routes/email.routes.js";
 
-import app from "./app.js";
-import { connectDB } from "./config/db.js";
-
+const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB then start Express server
-connectDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(
-      `Server running in ${process.env.NODE_ENV} mode on port ${PORT}`,
-    );
-  });
+// Enable CORS for Vite frontend running on local ports (5173 / 5174)
+app.use(
+  cors({
+    origin: ["http://localhost:5173", "http://localhost:5174"],
+    credentials: true,
+  }),
+);
+
+app.use(express.json());
+
+// Mount Routes
+app.use("/api/emails", emailRoutes);
+
+// Health Check
+app.get("/health", (req, res) => {
+  res.json({ status: "OK", timestamp: new Date() });
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running in development mode on port ${PORT}`);
 });
