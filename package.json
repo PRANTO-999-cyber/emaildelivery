@@ -1,14 +1,13 @@
 {
   "name": "email-delivery-platform",
   "version": "1.0.0",
-  "private": true,
   "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\" \"npm run worker\"",
     "server": "npm --prefix server run dev",
     "client": "npm --prefix client run dev",
-    "worker": "npm --prefix server/worker run dev",
-    "dev": "concurrently \"npm run server\" \"npm run client\""
+    "worker": "npm --prefix server/worker start"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.0.0"
   }
 }
